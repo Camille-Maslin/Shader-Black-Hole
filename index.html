@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Black Hole</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script type="x-shader/x-fragment" id="fragmentShader">
+        // Uniform variables for animation and interaction
+        uniform float time;
+        uniform vec2 resolution;
+        uniform vec2 mouse;
+
+        // Constants
+        #define PI 3.14159265359
+        #define OCTAVES 6
+
+        // 2D Rotation matrix
+        mat2 rot2D(float a) {
+            float c = cos(a), s = sin(a);
+            return mat2(c, -s, s, c);
+        }
+
+        // Hash function for random number generation
+        float hash(vec3 p) {
+            p = fract(p * vec3(.1031, .1030, .0973));
+            p += dot(p, p.yxz + 33.33);
+            return fract((p.x + p.y) * p.z);
+        }
+
+        // Star rendering function with flare effect
+        float star(vec2 uv, float flare) {
+            float d = length(uv);
+            float m = 0.02/d;
+            
+            float rays = max(0.0, 1.0-abs(uv.x*uv.y*1000.0));
+            m += rays*flare;
+            rays = max(0.0, 1.0-abs(uv.x*uv.y*1000.0));
+            m += rays*0.3*flare;
+            
+            m *= smoothstep(1.0, 0.2, d);
+            return m;
+        }
+
+        // Noise function for procedural generation
+        float noise(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            
+            return mix(
+                mix(
+                    mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
+                    mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x),
+                    f.y
+                ),
+                mix(
+                    mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                    mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x),
+                    f.y
+                ),
+                f.z
+            );
+        }
+
+        // Fractal Brownian Motion for nebula effect
+        float fbm(vec3 p) {
+            float value = 0.0;
+            float amplitude = 0.5;
+            float frequency = 1.0;
+            
+            for(int i = 0; i < OCTAVES; i++) {
+                value += amplitude * noise(p * frequency);
+                amplitude *= 0.5;
+                frequency *= 2.0;
+            }
+            
+            return value;
+        }
+
+        // Creates nebulous filaments effect
+        float nebulousFilaments(vec3 p) {
+            float n = fbm(p);
+            float n2 = fbm(p * 2.0 + n);
+            float n3 = fbm(p * 4.0 - n2);
+            return n2 * n3;
+        }
+
+        // Vortex effect for black hole simulation
+        vec2 vortex(vec2 uv, float strength) {
+            float r = length(uv);
+            float theta = atan(uv.y, uv.x);
+            
+            // Spiral effect
+            float spiral = theta + strength / (r + 0.1);
+            
+            // Radial distortion
+            float distortion = 1.0 + strength * 0.5 * smoothstep(0.8, 0.0, r);
+            
+            return vec2(
+                cos(spiral) * r * distortion,
+                sin(spiral) * r * distortion
+            );
+        }
+
+        // Main shader function
+        void main() {
+            vec2 uv = (gl_FragCoord.xy - 0.5 * resolution.xy) / min(resolution.x, resolution.y);
+            uv *= 1.8;
+            
+            float r = length(uv);
+            
+            // Application de l'effet d'aspiration
+            float vortexStrength = 2.0 + sin(time * 0.5) * 0.5;
+            vec2 distortedUV = vortex(uv, vortexStrength);
+            
+            // Rotation globale
+            float globalRot = time * 0.2;
+            distortedUV = rot2D(globalRot) * distortedUV;
+            
+            vec3 p = vec3(distortedUV * 2.0, time * 0.05);
+            vec3 col = vec3(0.0);
+            
+            float nebula = nebulousFilaments(p);
+            nebula = pow(nebula, 1.3); // Réduit pour plus de détails
+            
+            // Couleurs ajustées avec plus de violet
+            vec3 darkBlue = vec3(0.05, 0.1, 0.2);
+            vec3 brightBlue = vec3(0.2, 0.4, 0.8);
+            vec3 purple = vec3(0.6, 0.1, 0.8); // Violet plus intense
+            vec3 pink = vec3(1.0, 0.4, 0.8);
+            vec3 white = vec3(1.0, 0.98, 0.95);
+            
+            col = mix(darkBlue, brightBlue, smoothstep(0.1, 0.2, nebula));
+            col = mix(col, purple, smoothstep(0.2, 0.4, nebula));
+            col = mix(col, pink, smoothstep(0.4, 0.6, nebula));
+            col = mix(col, white, smoothstep(0.7, 0.8, nebula));
+            
+            // Trou noir central
+            float blackHole = smoothstep(0.1, 0.2, length(uv));
+            col *= blackHole;
+            
+            // Étoiles avec effet de rotation
+            for(int i = 0; i < 8; i++) {
+                vec2 starPos = vec2(
+                    hash(vec3(float(i), 1.0, 1.0)) * 2.0 - 1.0,
+                    hash(vec3(1.0, float(i), 1.0)) * 2.0 - 1.0
+                );
+                starPos = rot2D(globalRot * 0.5) * starPos;
+                float starBrightness = hash(vec3(float(i), float(i), 1.0));
+                float flare = smoothstep(0.5, 1.0, starBrightness);
+                col += vec3(1.0, 0.95, 0.8) * star(uv - starPos, flare) * 0.6;
+            }
+            
+            // Petites étoiles de fond
+            float stars = 0.0;
+            for(float i = 0.0; i < 3.0; i++) {
+                vec2 gridUv = distortedUV * (10.0 + i * 20.0);
+                vec2 gv = fract(gridUv) - 0.5;
+                vec2 id = floor(gridUv);
+                
+                float n = hash(vec3(id, i));
+                if(n > 0.98) {
+                    float sparkle = sin(time * 3.0 + n * 10.0) * 0.5 + 0.5;
+                    stars += smoothstep(0.2, 0.0, length(gv)) * sparkle;
+                }
+            }
+            col += vec3(0.9, 0.95, 1.0) * stars;
+            
+            float depth = exp(-r * 1.5);
+            float vignette = smoothstep(1.8, 0.5, r) * smoothstep(0.0, 0.3, r);
+            
+            col *= depth * vignette;
+            
+            col = pow(col, vec3(0.4545));
+            col *= 2.0;
+            
+            col = mix(vec3(0.02, 0.05, 0.1), col, vignette);
+            
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html> 
